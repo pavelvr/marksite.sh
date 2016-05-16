@@ -81,9 +81,7 @@ build ()
 	if [ ! $# -eq 1 ];then echo "Usage: build-site site-name";return;fi
 	echo -n "Building site: $1 ... "
 
-	rm -rf "$1/www/*"
-	cp -r "$1/static/"* "$1/www"
-	cp -r "$1/content/"* "$1/www"
+	cp -ru "$1/static/"* "$1/www"
 
 	CSS_FILE="css/styles.css"
 	HIGHLIGHT=
@@ -97,68 +95,107 @@ build ()
 
 		STYLESHEET=$(grep "stylesheet" "$METADATA"| sed -r "s/(\ |stylesheet:)//g")
 		test -n "$STYLESHEET" && CSS_FILE=$STYLESHEET
-		STYLESHEET_IS_LESS="false"
+		STYLESHEET_IS_LESS="no"
 		test -n "$(echo $STYLESHEET | grep -Ei ".*\.less$")" \
-			&& STYLESHEET_IS_LESS="true" \
+			&& STYLESHEET_IS_LESS="yes" \
 			&& CSS_FILE="${CSS_FILE%.less}.css"
 	fi
 
 	test -f "$1/menu.md" && MENU="-V toc=\"{{MENU}}\"" || MENU=
 	test -f "$1/template.html" && TEMPLATE="--template=$1/template.html" || TEMPLATE=
 
+	test -f "$1/js-includes.md" && JS_INCLUDES="yes" || JS_INCLUDES="no"
+
 	PARAMS="-s -f markdown+yaml_metadata_block -t html5"
 
-	# TODO: grep imports inside .less files and remove before this fase
-	for _file in $(find "$1/www/css" -type f -iname "*.less"); do
-		# windows' version of find return somes \ in path, fixing it
-		less_file=$(echo $_file | tr "\\\\" "/")
-		node bin/lessc/bin/lessc "$less_file" "${less_file%.less}.css"
-		rm -f "$less_file"
-	done
+	if [ $STYLESHEET_IS_LESS = "yes" ];then
+		less_file=$1/www/$STYLESHEET
+		css_file=${less_file%.less}.css
+		if [ ! "$(date +%s -r "$css_file")" = "$(date +%s -r "$less_file")" ];then
+			node bin/lessc/bin/lessc "$less_file" "$css_file"
+			touch -c -m -r "$less_file" "$css_file"
+		fi
+	fi
 
 	FILES=
 	DIRS=
-	for _file in $(find "$1/www" -type f -iname "*.md");do
+	for _file in $(find "$1/content" -type f -iname "*.md");do
 		# windows' version of find returns some \ in path, fixing it
 		_file=$(echo $_file | tr "\\\\" "/")
 		FILES=$FILES$_file"\n"
 		DIRS=$DIRS"$(dirname $_file)\n"
 	done
 	
-	for _dir in $(echo -ne $DIRS | uniq); do
-		_prefix=$(echo ${_dir#"$1/www"} | sed -e "s/[^\/]//g" -e "s/\//\.\.\//g")
+	# TODO: include metadata.yml in the checks for FORCE_REBUILD
+	# complex tests not working, so, doing it step by step
+	if [ "$JS_INCLUDES" = "yes" ];then
+		if [ ! -f "$1/.js-includes.html" ];then
+			FORCE_REBUILD="yes"
+		elif [ ! "$(date +%s -r "$1/.js-includes.html")" = "$(date +%s -r "$1/js-includes.md")" ];then
+			FORCE_REBUILD="yes"
+		fi
+	fi
+	if [ -n "$MENU" ];then
+		if [ ! -f "$1/.menu.html" ];then
+			FORCE_REBUILD="yes"
+		elif [ ! "$(date +%s -r "$1/.menu.html")" = "$(date +%s -r "$1/menu.md")" ];then
+			FORCE_REBUILD="yes"
+		fi
+	else
+		FORCE_REBUILD="no"
+	fi
 
-		# preparing main menu
+	for _dir in $(echo -ne $DIRS | uniq); do
+		_out_dir=$1/www${_dir#"$1/content"}
+		test ! -d "$_out_dir" && mkdir -p "$_out_dir"
+
+		_prefix=$(echo ${_out_dir#"$1/www"} | sed -e "s/[^\/]//g" -e "s/\//\.\.\//g")
+
+		# TODO: try to delay menu and js-includes regeneration unless it's
+		# actually needed (any file in $_dir will be (re)generated)
+		# preparing main menu for $_dir
 		if [ -n "$MENU" ]; then
 			sed_script="s/href=\\\"/href=\\\""$(echo $_prefix | sed -e "s/\//\\\\\//g" -e "s/\./\\\\./g" )"/g"
-			pandoc -f markdown -t html5 "$1/menu.md" | sed "$sed_script" > "$1/menu.html"
+			pandoc -f markdown -t html5 "$1/menu.md" | sed "$sed_script" > "$1/.menu.html"
+			touch -c -m -r "$1/menu.md" "$1/.menu.html"
 		fi
-		
-		# preparing scripts block
-		if [ -f "$1/js-includes.md" ]; then
+
+		# preparing scripts block for $_dir
+		if [ "$JS_INCLUDES" = "yes" ]; then
 			JS=
 			for js_file in $(grep ".js" "$1/js-includes.md"); do
 				JS=$JS"<script type=\"text/javascript\" src=\"$_prefix$js_file\"></script>\n"
 			done
-			echo -ne $JS > "$1/js-includes.html"
+			echo -ne $JS > "$1/.js-includes.html"
+			touch -c -m -r "$1/js-includes.md" "$1/.js-includes.html"
 		fi
 
 		# processing files inside $_dir
 		for md_file in $(echo -e $FILES);do
 			if [ "$(dirname $md_file)" = "$_dir" ]; then
-				html_file=${md_file%.md}.html
-				pandoc $PARAMS -c $_prefix$CSS_FILE $MENU $HIGHLIGHT $TEMPLATE "$md_file" "$METADATA" |\
-					sed -e "/{{MENU}}/r $1/menu.html" -e '//d' |\
-					sed -e "s/<\/body>/{{JS}}\n<\/body>/g" |\
-					sed -e "/{{JS}}/r $1/js-includes.html" -e '//d' |\
-					sed -r "s/\.md\"/\.html\"/g" > "$html_file"
-				rm -f "$md_file"
+				html_file=$_out_dir/$(basename "${md_file%.md}.html")
+
+				if [ "$FORCE_REBUILD" = "yes" ];then
+					REBUILD_FILE="yes"
+				elif [ ! -f "$html_file" ];then
+					REBUILD_FILE="yes"
+				elif [ ! "$(date +%s -r "$html_file")" = "$(date +%s -r "$md_file")" ];then
+					REBUILD_FILE="yes"
+				else
+					REBUILD_FILE="no"
+				fi
+
+				if [ "$REBUILD_FILE" = "yes" ];then
+					# echo $html_file
+					pandoc $PARAMS -c $_prefix$CSS_FILE $MENU $HIGHLIGHT $TEMPLATE "$md_file" "$METADATA" |\
+						sed -e "/{{MENU}}/r $1/.menu.html" -e '//d' |\
+						sed -e "s/<\/body>/{{JS}}\n<\/body>/g" |\
+						sed -e "/{{JS}}/r $1/.js-includes.html" -e '//d' |\
+						sed -r "s/\.md\"/\.html\"/g" > "$html_file"
+					touch -c -m -r "$md_file" "$html_file"
+				fi
 			fi
 		done
-		
-		# cleaning temporary files
-		test -f "$1/menu.html" && rm -f "$1/menu.html"
-		test -f "$1/js-includes.html" && rm -f "$1/js-includes.html"
 	done
 
 	echo "done"
