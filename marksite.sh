@@ -59,7 +59,7 @@ init ()
 		METADATA=$METADATA"title:\r\n"
 		METADATA=$METADATA"author:\r\n"
 		METADATA=$METADATA"highlight: pygments\r\n"
-		METADATA=$METADATA"css: css/styles.css\r\n"
+		METADATA=$METADATA"stylesheet: css/styles.css\r\n"
 		METADATA=$METADATA"---\r\n"
 		echo -ne $METADATA > "$1/metadata.yml"
 	fi
