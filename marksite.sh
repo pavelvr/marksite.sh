@@ -25,7 +25,6 @@ add-page ()
 		CONTENT="---\r\n"
 		CONTENT=$CONTENT"pagetitle: "$BASENAME" page title\r\n"
 		CONTENT=$CONTENT"keywords:\r\n"
-		CONTENT=$CONTENT"date: "$(date +%Y.%m.%d)"\r\n\r\n"
 		CONTENT=$CONTENT"---\r\n\r\n"
 		CONTENT=$CONTENT"## "$BASENAME" page\r\n\r\n"
 		CONTENT=$CONTENT"Lorem ipsum...\r\n"
@@ -65,7 +64,7 @@ init ()
 	fi
 
 	CSS_FILE=$1/static/css/styles.css
-	test ! -f "$CSS_FILE" && echo -ne "/* your CSS here */\r\n" > "$CSS_FILE"
+	test ! -f "$CSS_FILE" && echo -ne "/* your style rules here */\r\n" > "$CSS_FILE"
 
 	JS_FILE=$1/static/js/my.js
 	test ! -f "$JS_FILE" && echo -ne "/* your js code here */\r\n" > "$JS_FILE"
@@ -111,6 +110,7 @@ build ()
 	if [ $STYLESHEET_IS_LESS = "yes" ];then
 		less_file=$1/www/$STYLESHEET
 		css_file=${less_file%.less}.css
+		test ! -f "$css_file" && touch "$css_file"
 		if [ ! "$(date +%s -r "$css_file")" = "$(date +%s -r "$less_file")" ];then
 			node bin/lessc/bin/lessc "$less_file" "$css_file"
 			touch -c -m -r "$less_file" "$css_file"
@@ -155,12 +155,13 @@ build ()
 		# actually needed (any file in $_dir will be (re)generated)
 		# preparing main menu for $_dir
 		if [ -n "$MENU" ]; then
-			sed_script="s/href=\\\"/href=\\\""$(echo $_prefix | sed -e "s/\//\\\\\//g" -e "s/\./\\\\./g" )"/g"
-			pandoc -f markdown -t html5 "$1/menu.md" | sed "$sed_script" > "$1/.menu.html"
+			sed_script="s/(href=\\\")([a-zA-Z0-9_\\\-\\\.\\\/\\\?]+\\\")/\1"$(echo $_prefix | sed -e "s/\//\\\\\//g" -e "s/\./\\\\./g")"\2/g"
+			pandoc -f markdown -t html5 "$1/menu.md" | sed -r "$sed_script" > "$1/.menu.html"
 			touch -c -m -r "$1/menu.md" "$1/.menu.html"
 		fi
 
 		# preparing scripts block for $_dir
+		JS_INCLUDES_PARAM=
 		if [ "$JS_INCLUDES" = "yes" ]; then
 			JS=
 			for js_file in $(grep ".js" "$1/js-includes.md"); do
@@ -168,6 +169,7 @@ build ()
 			done
 			echo -ne $JS > "$1/.js-includes.html"
 			touch -c -m -r "$1/js-includes.md" "$1/.js-includes.html"
+			JS_INCLUDES_PARAM="-A $1/.js-includes.html"
 		fi
 
 		# processing files inside $_dir
@@ -187,11 +189,12 @@ build ()
 
 				if [ "$REBUILD_FILE" = "yes" ];then
 					# echo $html_file
-					pandoc $PARAMS -c $_prefix$CSS_FILE $MENU $HIGHLIGHT $TEMPLATE "$md_file" "$METADATA" |\
-						sed -e "/{{MENU}}/r $1/.menu.html" -e '//d' |\
-						sed -e "s/<\/body>/{{JS}}\n<\/body>/g" |\
-						sed -e "/{{JS}}/r $1/.js-includes.html" -e '//d' |\
-						sed -r "s/\.md\"/\.html\"/g" > "$html_file"
+					pandoc $PARAMS -c $_prefix$CSS_FILE $MENU \
+						-V date="$(date +%Y-%m-%d -r "$md_file")" \
+						$JS_INCLUDES_PARAM $HIGHLIGHT $TEMPLATE \
+						"$md_file" "$METADATA" |\
+							sed -e "/{{MENU}}/r $1/.menu.html" -e '//d' |\
+							sed -r "s/\.md\"/\.html\"/g" > "$html_file"
 					touch -c -m -r "$md_file" "$html_file"
 				fi
 			fi
