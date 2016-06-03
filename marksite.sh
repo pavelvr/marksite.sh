@@ -101,6 +101,8 @@ build ()
 	fi
 
 	test -f "$1/menu.md" && MENU="-V toc=\"{{MENU}}\"" || MENU=
+	test -f "$1/header.md" && HEADER="-A $1/.header.html" || HEADER=
+	test -f "$1/footer.md" && FOOTER="-A $1/.footer.html" || FOOTER=
 	test -f "$1/template.html" && TEMPLATE="--template=$1/template.html" || TEMPLATE=
 
 	test -f "$1/js-includes.md" && JS_INCLUDES="yes" || JS_INCLUDES="no"
@@ -128,21 +130,34 @@ build ()
 	
 	# TODO: include metadata.yml in the checks for FORCE_REBUILD
 	# complex tests not working, so, doing it step by step
-	if [ "$JS_INCLUDES" = "yes" ];then
-		if [ ! -f "$1/.js-includes.html" ];then
-			FORCE_REBUILD="yes"
-		elif [ ! "$(date +%s -r "$1/.js-includes.html")" = "$(date +%s -r "$1/js-includes.md")" ];then
-			FORCE_REBUILD="yes"
-		fi
-	fi
+	FORCE_REBUILD="no"
 	if [ -n "$MENU" ];then
 		if [ ! -f "$1/.menu.html" ];then
 			FORCE_REBUILD="yes"
 		elif [ ! "$(date +%s -r "$1/.menu.html")" = "$(date +%s -r "$1/menu.md")" ];then
 			FORCE_REBUILD="yes"
 		fi
-	else
-		FORCE_REBUILD="no"
+	fi
+	if [ -n "$HEADER" ];then
+		if [ ! -f "$1/.header.html" ];then
+			FORCE_REBUILD="yes"
+		elif [ ! "$(date +%s -r "$1/.header.html")" = "$(date +%s -r "$1/header.md")" ];then
+			FORCE_REBUILD="yes"
+		fi
+	fi
+	if [ -n "$FOOTER" ];then
+		if [ ! -f "$1/.footer.html" ];then
+			FORCE_REBUILD="yes"
+		elif [ ! "$(date +%s -r "$1/.footer.html")" = "$(date +%s -r "$1/footer.md")" ];then
+			FORCE_REBUILD="yes"
+		fi
+	fi
+	if [ "$JS_INCLUDES" = "yes" ];then
+		if [ ! -f "$1/.js-includes.html" ];then
+			FORCE_REBUILD="yes"
+		elif [ ! "$(date +%s -r "$1/.js-includes.html")" = "$(date +%s -r "$1/js-includes.md")" ];then
+			FORCE_REBUILD="yes"
+		fi
 	fi
 
 	for _dir in $(echo -ne $DIRS | uniq); do
@@ -153,11 +168,24 @@ build ()
 
 		# TODO: try to delay menu and js-includes regeneration unless it's
 		# actually needed (any file in $_dir will be (re)generated)
+		href_sed_script="s/(href=\\\")([a-zA-Z0-9_\\\-\\\.\\\/\\\?]+\\\")/\1"$(echo $_prefix | sed -e "s/\//\\\\\//g" -e "s/\./\\\\./g")"\2/g"
+
 		# preparing main menu for $_dir
 		if [ -n "$MENU" ]; then
-			sed_script="s/(href=\\\")([a-zA-Z0-9_\\\-\\\.\\\/\\\?]+\\\")/\1"$(echo $_prefix | sed -e "s/\//\\\\\//g" -e "s/\./\\\\./g")"\2/g"
-			pandoc -f markdown -t html5 "$1/menu.md" | sed -r "$sed_script" > "$1/.menu.html"
+			pandoc -f markdown -t html5 "$1/menu.md" | sed -r "$href_sed_script" > "$1/.menu.html"
 			touch -c -m -r "$1/menu.md" "$1/.menu.html"
+		fi
+
+		# preparing header for $_dir
+		if [ -n "$HEADER" ]; then
+			pandoc -f markdown -t html5 "$1/header.md" | sed -r "$href_sed_script" > "$1/.header.html"
+			touch -c -m -r "$1/header.md" "$1/.header.html"
+		fi
+
+		# preparing footer for $_dir
+		if [ -n "$FOOTER" ]; then
+			pandoc -f markdown -t html5 "$1/footer.md" | sed -r "$href_sed_script" > "$1/.footer.html"
+			touch -c -m -r "$1/footer.md" "$1/.footer.html"
 		fi
 
 		# preparing scripts block for $_dir
@@ -191,7 +219,7 @@ build ()
 					# echo $html_file
 					pandoc $PARAMS -c $_prefix$CSS_FILE $MENU \
 						-V date="$(date +%Y-%m-%d -r "$md_file")" \
-						$JS_INCLUDES_PARAM $HIGHLIGHT $TEMPLATE \
+						$HEADER $HIGHLIGHT $TEMPLATE $FOOTER $JS_INCLUDES_PARAM \
 						"$md_file" "$METADATA" |\
 							sed -e "/{{MENU}}/r $1/.menu.html" -e '//d' |\
 							sed -r "s/\.md\"/\.html\"/g" > "$html_file"
