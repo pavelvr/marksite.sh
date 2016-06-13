@@ -1,4 +1,4 @@
-# MarkSite
+# marksite.sh
 
 _Generador de Sitios Web Estáticos a partir de documentos [MarkDown](http://daringfireball.net/projects/markdown) utilizando [pandoc](http://pandoc.org) como motor de conversión a [HTML5](http://www.w3.org/TR/html5/)._
 
@@ -6,13 +6,13 @@ MarkDown es un lenguaje de marcado ligero, legible para humanos en su forma de e
 
 Una de estas herramientas es pandoc, muy avanzada, con funcionalidades tanto de convertir simples documentos MarkDown a HTML, como de generar libros, tesis, artículos con necesidades especiales de formateo como aquellos de contenido científico.
 
-MarkSite consta de 3 scripts: el núcleo de funcionalidad escrito en bash (de linux, unix, ...) y dos scripts de apoyo para preparar el ambiente de ejecución con las utilidades propias de dichos sistemas (previamente compiladas para windows), garantizando que marksite pueda ser utilizado en sistemas Windows de forma transparente, portable, y sin necesidad de instalar absolutamente nada.
+`marksite` consta de 3 scripts: el núcleo de funcionalidad escrito en bash (de linux, unix, ...) y dos scripts de apoyo para preparar el ambiente de ejecución con las utilidades propias de dichos sistemas (previamente compiladas para windows), garantizando que marksite pueda ser utilizado en sistemas Windows de forma transparente, portable, y sin necesidad de instalar absolutamente nada.
 
 Es una herramienta de línea de comandos, por lo tanto, toda la interacción será a través de una consola, pero dada la sencillez de operación, no hay que asustarse, es apenas un comando, con muy pocas opciones, las mínimas necesarias para mantener un balance adecuado de facilidad de uso, potencia y flexibilidad.
 
 ## Modo de uso (resumido)
 
-1. En Windows: abrir la consola de trabajo de `marksite` haciendo doble click sobe `cmdhere.cmd`; en sistemas Linux, abrir una terminal en el directorio de `marksite`
+1. En Windows: abrir la consola de trabajo de `marksite` haciendo doble click sobre `cmdhere.cmd`; en sistemas Linux, abrir una terminal en el directorio de `marksite`
 2. Crear un sitio
 	```dos
     |> marksite init mi-sitio
@@ -94,9 +94,12 @@ Algo muy importante, es que todos los archivos deben estar codificados usando UT
 
 ```
 +--- mi-sitio/
+|   |--- footer.md(*)
+|   |--- header.md(*)
 |   |--- js-includes.md(*)
 |   |--- menu.md(*)
 |   |--- metadata.yml
+|   |--- template.html(*)
 |   +--- content/
 |   |   +--- index.md
 |   +--- static/
@@ -108,7 +111,7 @@ Algo muy importante, es que todos los archivos deben estar codificados usando UT
 |   \--- www/
 ```
 
-**(*)**: _Son opcionales, aunque `js-includes.md` sí se crea con la estructura básica, no así `menu.md`._
+**(*)**: _Son opcionales, aunque `js-includes.md` sí se crea con la estructura básica, no así el resto de los archivos._
 
 #### Directorio `content/`
 
@@ -140,6 +143,10 @@ Todo el contenido de este directorio será transferido tal cual, durante el paso
 
 Aquí se "publicará" el sitio, una vez procesado y generado. El contenido de este directorio es el que se debería copiar a un servidor donde esté publicado el sitio resultante.
 
+#### Archivos `footer.md` y `header.md`
+
+De existir alguno de ellos, o ambos, serán procesados, convertidos a HTML5 y luego incluidos al principio y al final, respectivamente, del cuerpo de cada página del sitio.
+
 #### Archivo `js-includes.md`
 
 En este archivo se incluirán, uno en cada línea, los nombres de los scripts de JavaScript que utilizaremos en nuestro sitio (ej: `bootstrap.js`, `jquery.js`). En el momento de inicializar el sitio, solamente contiene una línea, apuntando a `js/my.js`. Este último, es un script vacío, que también se crea en el momento de la inicialización, listo ya para que comencemos a agregarle funcionalidad. Los scripts serán cargados en el mismo orden en que aparezcan, por lo que, si nuestro `my.js` utiliza funciones de `jquery.js`, el contenido de `js-includes.js` debería ser:
@@ -159,9 +166,19 @@ Este archivo se puede crear ejecutando `marksite init-menu nombre-sitio`, y no e
 - [Index](index.md)
 ```
 
+#### Archivo `template.html`
+
+`marksite` utiliza la plantilla HTML5 por defecto de **pandoc** pero permite definir una plantilla personalizada. Para obtener la plantilla original de **pandoc**, bastará con ejecutar:
+
+```
+marksite dump-template site-name
+```
+
+Una vez hecho esto, podemos proceder a modificarla a nuestro gusto, tratando de mantener las variables principales que se definen en ella.
+
 #### Archivo `metadata.yml`
 
-Este arhivo es uno de los más importantes. Almacena "metainformación" que afecta al sitio en general:
+Este archivo es uno de los más importantes. Almacena "metainformación" que afecta al sitio en general:
 
 ```
 ---
@@ -169,7 +186,7 @@ title-prefix:
 title:
 author:
 highlight: pygments
-css: css/styles.css
+stylesheet: css/styles.css
 ---
 ```
 
@@ -179,7 +196,7 @@ Al igual que con el bloque de "metainformación" de cada uno de nuestros documen
 - `title`: Título principal del sitio, aparecerá como título principal, al principio de todas y cada una de las páginas. Generalmente, esta llave tendrá casi el mismo valor que `title-prefix`, a excepción del guión final.
 - `author`: El valor de esta llave se agrega al principio de todas las páginas, así como en la sección de "metainformación" que utilizan luego los indizadores en internet.
 - `highlight`: Esta llave es muy útil en caso de que en algunos documentos del sitio se incluya código fuente de programación. Esta opción define qué estilo de coloreado de sintaxis se utilizará. Para desactivar totalmente esta funcionalidad, se dejará sin valor, o con el valor especial `no`. Los posibles estilos de coloreado de sintaxis son: `pygments`, `kate`, `monochrome`, `espresso`, `zenburn`, `haddock`, y `tango`. De escribirse un valor diferente de los mencionados, **pandoc** lanzará un error durante la fase de conversión.
-- `css`: La hoja de estilos a utilizar. Al igual que los scripts JavaScript, el camino debe ser escrito con respecto al directorio `static`. El valor por defecto hace referencia a un archivo de estilos vacía que se crea durante la inicialización de un sitio.
+- `stylesheet`: La hoja de estilos a utilizar. Al igual que los scripts JavaScript, el camino debe ser escrito con respecto al directorio `static`. El valor por defecto hace referencia a un archivo de estilos vacía que se crea durante la inicialización de un sitio. Puede ser una hoja de estilos CSS o LESS. En caso de utilizar LESS, `marksite` compilará el archivo .less, generando un archivo de igual nombre pero con extensión .css y ubicándolo en el mismo directorio que el .less.
 
 
 ## Licencia
